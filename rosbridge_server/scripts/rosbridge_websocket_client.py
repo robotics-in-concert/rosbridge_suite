@@ -21,13 +21,13 @@ def send_message(message):
     print "Msg sent: [%s]" % message
 
 def on_error(ws, error):
-    pass
+    print "Error! %s" % error
 
 def on_close(ws):
     pass
 
 def on_open(ws):
-    pass
+    ws.send('{"op":"proxy"}')
 
 if __name__ == "__main__":
     rospy.init_node("rosbridge_websocket_client")
@@ -36,10 +36,13 @@ if __name__ == "__main__":
     protocol = RosbridgeProtocol(0)
     protocol.outgoing = send_message
 
-    ws = websocket.WebSocketApp("ws://localhost:9090/",
+    # Manually subscribe to chatter message
+    # on_message(ws, '{"op":"subscribe","id":"subscribe:/chatter:1","type":"std_msgs/String","topic":"/chatter","compression":"none","throttle_rate":0}')
+
+    ws = websocket.WebSocketApp("ws://10.34.0.13:9090/",
                               on_message = on_message,
                               on_error = on_error,
+                              on_open = on_open,
                               on_close = on_close)
 
-    ws.on_open = on_open
     ws.run_forever()
