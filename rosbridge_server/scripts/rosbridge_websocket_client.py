@@ -1,48 +1,100 @@
 #!/usr/bin/env python
 import rospy
+import signal
 
-from signal import signal, SIGINT, SIG_DFL
 
-import websocket
+from tornado.websocket import websocket_connect, WebSocketClientConnection
+from tornado.ioloop import IOLoop
+from tornado import gen
+
+from datetime import timedelta
 
 from rosbridge_library.rosbridge_protocol import RosbridgeProtocol
 from rosbridge_library.util import json
 
-# Globals for now (should be class properties)
-protocol = None
+
+PING_TIMEOUT = 15
+
 ws = None
+protocol = None
 
-def on_message(ws, message):
-    print "Msg received: [%s]" % message
-    protocol.incoming(message)
+# WebsocketClientTornado
+#
+# Class that handles the connection using websocket from Tornado Project.
+# More info:  http://www.tornadoweb.org/en/stable/websocket.html#client-side-support
+# Example code: http://www.seismicportal.eu/realtime.html
 
-def send_message(message):
-    ws.send(message)
-    print "Msg sent: [%s]" % message
+class WebsocketClientTornado():
 
-def on_error(ws, error):
-    print "Error! %s" % error
+  
+    conn = None
+    keepalive = None
 
-def on_close(ws):
-    pass
+    def __init__(self, uri):
+        self.uri = uri
+        self.doconn()
 
-def on_open(ws):
-    ws.send('{"op":"proxy"}')
+    def doconn(self):
+        rospy.loginfo("trying connection to %s"%(self.uri,))
+        w = websocket_connect(self.uri)
+        rospy.loginfo("connected, waiting for messages")
+        w.add_done_callback(self.wsconnection_cb)
+
+
+    def dokeepalive(self):
+        stream = self.conn.protocol.stream
+        if not stream.closed():
+            self.keepalive = stream.io_loop.add_timeout(timedelta(seconds=PING_TIMEOUT), self.dokeepalive)
+            self.conn.protocol.write_ping("")
+        else:
+            self.keepalive = None # should never happen
+
+    def wsconnection_cb(self, conn):
+        self.conn = conn.result()
+        # TODO check result
+        self.conn.on_message = self.message
+        self.send_message('{"op":"proxy"}')
+        self.keepalive = IOLoop.instance().add_timeout(timedelta(seconds=PING_TIMEOUT), self.dokeepalive)
+
+    def message(self, _message):
+ 	print "Msg received: [%s]" % _message
+    	protocol.incoming(_message)
+
+    def close(self):
+        rospy.loginfo('connection closed')
+        if self.keepalive is not None:
+            keepalive = self.keepalive
+            self.keepalive = None
+            IOLoop.instance().remove_timeout(keepalive)
+        self.doconn()
+
+    def send_message(self, _message):
+        self.conn.write_message(_message)
+        print "Msg sent: [%s]" % _message
+
 
 if __name__ == "__main__":
-    rospy.init_node("rosbridge_websocket_client")
-    signal(SIGINT, SIG_DFL)
+    try:
+        rospy.init_node("rosbridge_websocket_client")
 
-    protocol = RosbridgeProtocol(0)
-    protocol.outgoing = send_message
+        io_loop = IOLoop.instance()
+        signal.signal(signal.SIGTERM, io_loop.stop)  # See what happens with the signal before. ROS compilant code?
 
-    # Manually subscribe to chatter message
-    # on_message(ws, '{"op":"subscribe","id":"subscribe:/chatter:1","type":"std_msgs/String","topic":"/chatter","compression":"none","throttle_rate":0}')
+        protocol = RosbridgeProtocol(0)
 
-    ws = websocket.WebSocketApp("ws://10.34.0.13:9090/",
-                              on_message = on_message,
-                              on_error = on_error,
-                              on_open = on_open,
-                              on_close = on_close)
+        # Connect with server
+        server_address = rospy.get_param("server_address")
+        ws = WebsocketClientTornado(server_address)
 
-    ws.run_forever()
+	#ws.send_message("Hola!")
+	
+        protocol.outgoing = ws.send_message
+
+	# Loop
+    	IOLoop.instance().start()
+
+    except rospy.ROSInterruptException:
+       	pass
+
+
+
