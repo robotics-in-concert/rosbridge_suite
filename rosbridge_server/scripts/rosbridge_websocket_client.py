@@ -83,7 +83,7 @@ if __name__ == "__main__":
         protocol = RosbridgeProtocol(0)
 
         # Connect with server
-        server_address = rospy.get_param("server_address")
+        server_address = rospy.get_param("~server_address")
         ws = WebsocketClientTornado(server_address)
 
 	#ws.send_message("Hola!")
