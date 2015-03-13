@@ -123,8 +123,8 @@ if __name__ == "__main__":
         protocol = RosbridgeProtocol(0)
 
         # Connect with server
-        # server_address = rospy.get_param("~server_address")
-        ws = WebsocketClientTornado("ws://10.34.0.146:9090/")
+        server_address = rospy.get_param("~server_address")
+        ws = WebsocketClientTornado(server_address)
 
 	#ws.send_message("Hola!")
 	
