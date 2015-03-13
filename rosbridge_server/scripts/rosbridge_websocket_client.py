@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 import rospy
 import signal
+import httplib
+import base64
 
 
 from tornado.websocket import websocket_connect, WebSocketClientConnection
@@ -11,7 +13,6 @@ from datetime import timedelta
 
 from rosbridge_library.rosbridge_protocol import RosbridgeProtocol
 from rosbridge_library.util import json
-
 
 PING_TIMEOUT = 15
 
@@ -57,8 +58,26 @@ class WebsocketClientTornado():
         self.keepalive = IOLoop.instance().add_timeout(timedelta(seconds=PING_TIMEOUT), self.dokeepalive)
 
     def message(self, _message):
- 	print "Msg received: [%s]" % _message
-    	protocol.incoming(_message)
+        print "Msg received: [%s]" % _message
+        msg = json.loads(_message)
+        if msg['op'] == 'video':	
+            rospy.loginfo("RECEIVED VIDEO MSG")
+            try:
+                conn = httplib.HTTPConnection("localhost",8080)
+                conn.request("GET","/stream?topic=/usb_cam_node/image_raw")#TODO Parameters
+                resp = conn.getresponse()
+                if resp.status == 200:
+                    print "SENDING VIDEO"
+                    self.send_video(resp) 
+            except:
+                print "Could not connect to WebCam"
+                rospy.loginfo("Could not connect to WebCam")
+                self.send_message('{"op":"endVideo"}')
+        elif msg['op'] == "endVideo":
+            #TODO Resolve stop from client
+            pass            
+        else:
+            protocol.incoming(_message)
 
     def close(self):
         rospy.loginfo('connection closed')
@@ -72,6 +91,28 @@ class WebsocketClientTornado():
         self.conn.write_message(_message)
         print "Msg sent: [%s]" % _message
 
+    def send_video(self, resp):
+        "Sends video in chunks"
+        try:
+            print "Sending Video chunks"
+            s = self.getData(resp) #Read chunk from WebCam
+            encoded = base64.b64encode(s) #Encode in Base64 & make json
+            chunk = json.dumps({"op":"video","data": encoded})
+            self.send_message(chunk)
+        except Exception as e:
+            print e
+        else:
+            stream = self.conn.protocol.stream
+            if len(s) > 0 and not stream.closed(): #there are more chunks & connection is not closed
+                IOLoop.instance().add_callback(self.send_video,resp) #new callback to send next chunk
+            elif len(s) == 0:
+                self.send_message('{"op":"endVideo"}')
+
+    def getData(self,src,size=1024):
+        "Read chunk of Data because the response is infinite"
+        d = src.read(size)
+        return d
+    
 
 if __name__ == "__main__":
     try:
@@ -79,7 +120,6 @@ if __name__ == "__main__":
 
         io_loop = IOLoop.instance()
         signal.signal(signal.SIGTERM, io_loop.stop)  # See what happens with the signal before. ROS compilant code?
-
         protocol = RosbridgeProtocol(0)
 
         # Connect with server
