@@ -4,6 +4,7 @@
   <arg name="certfile" />
   <arg name="keyfile" />
   <arg name="authenticate" default="false" />
+  <arg name="webserver_uri" default="ws://localhost:9090" />
 
   <group if="$(arg ssl)">
     <node name="rosbridge_websocket_client" pkg="rosbridge_server" type="rosbridge_websocket_client" output="screen">
@@ -12,14 +13,13 @@
       <param name="authenticate" value="$(arg authenticate)" />
       <param name="port" value="$(arg port)"/>
       <param name="address" value="$(arg address)"/>
+      <param name="webserver_uri" value="$(arg webserver_uri)"/>
     </node>
   </group>
   <group unless="$(arg ssl)">
     <node name="rosbridge_websocket_client" pkg="rosbridge_server" type="rosbridge_websocket_client" output="screen">
       <param name="authenticate" value="$(arg authenticate)" />
-      <param name="server_address" value="$(arg url)"/>
+      <param name="webserver_uri" value="$(arg webserver_uri)"/>
     </node>
   </group>
-
-  <node name="rosapi" pkg="rosapi" type="rosapi" />
 </launch>
