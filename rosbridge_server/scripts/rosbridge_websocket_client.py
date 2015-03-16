@@ -18,6 +18,8 @@ PING_TIMEOUT = 15
 ws = None
 protocol = None
 
+webserver_port = 8080
+
 # WebsocketClientTornado
 #
 # Class that handles the connection using websocket from Tornado Project.
@@ -63,7 +65,7 @@ class WebsocketClientTornado():
         if msg['op'] == 'video':
             rospy.loginfo("RECEIVED VIDEO MSG")
             try:
-                conn = httplib.HTTPConnection("localhost", 8080)
+                conn = httplib.HTTPConnection("localhost", webserver_port)
                 conn.request("GET", "/stream?topic=/usb_cam_node/image_raw")
                 #TODO Parameters
                 resp = conn.getresponse()
@@ -125,8 +127,10 @@ if __name__ == "__main__":
         protocol = RosbridgeProtocol(0)
 
         # Connect with server
-        server_uri = "ws://" + rospy.get_param("~address") + ":" + \
-            str(rospy.get_param("~port")) + "/ws"
+        server_uri = "ws://" + rospy.get_param("~webserver_address")
+        server_uri = server_uri.replace("8888", "9090")
+        # In the future we are going need to use everithing on the same port
+        # given throught the argument
         ws = WebsocketClientTornado(server_uri)
         protocol.outgoing = ws.send_message
 
