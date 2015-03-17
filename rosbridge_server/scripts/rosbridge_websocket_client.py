@@ -127,11 +127,11 @@ if __name__ == "__main__":
         protocol = RosbridgeProtocol(0)
 
         # Connect with server
-        server_uri = "ws://" + rospy.get_param("~webserver_uri")
+        server_uri = "ws://" + rospy.get_param("~webserver_uri") + "/ws"
         server_uri = server_uri.replace("8888", "9090")
         # In the future we are going need to use everithing on the same port
         # given throught the argument
-        ws = WebsocketClientTornado(server_uri)
+	ws = WebsocketClientTornado(server_uri)
         protocol.outgoing = ws.send_message
 
         # Loop
