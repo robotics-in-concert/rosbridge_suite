@@ -63,9 +63,9 @@ class WebsocketClientTornado():
         #print "Msg received: [%s]" % _message
         msg = json.loads(_message)
         if msg['op'] == 'video':
-            rospy.loginfo("RECEIVED VIDEO MSG")
             try:
-                c = VideoTransfer("http://localhost:8080/stream?topic=/usb_cam_node/image_raw",self)
+                # TODO: Get this as a parameter of the video request
+                c = VideoTransfer("http://localhost:8080/stream?topic=/turtlebot/teleop/image_raw&width=640&height=480",self)
             except e:
                 print "Could not connect to WebCam"
                 print e
