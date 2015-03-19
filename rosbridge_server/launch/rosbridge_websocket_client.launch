@@ -1,5 +1,4 @@
 <launch>
-  <arg name="url" default="ws://localhost:9090" />
   <arg name="ssl" default="false" />
   <arg name="certfile" />
   <arg name="keyfile" />
