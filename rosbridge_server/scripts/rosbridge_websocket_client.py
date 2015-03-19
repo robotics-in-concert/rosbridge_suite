@@ -65,7 +65,7 @@ class WebsocketClientTornado():
         if msg['op'] == 'video':
             try:
                 # TODO: Get this as a parameter of the video request
-                c = VideoTransfer("http://localhost:8080/stream?topic=/turtlebot/teleop/image_raw&width=640&height=480",self)
+                c = VideoTransfer("http://localhost:8080/stream?topic=/turtlebot/teleop/image&width=640&height=480",self)
             except e:
                 print "Could not connect to WebCam"
                 print e
