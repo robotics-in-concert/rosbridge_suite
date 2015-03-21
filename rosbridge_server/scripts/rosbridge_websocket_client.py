@@ -3,7 +3,7 @@ import rospy
 import signal
 import tornado.httpclient
 import base64
-
+import urllib
 
 from tornado.websocket import websocket_connect
 from tornado.ioloop import IOLoop
@@ -64,8 +64,8 @@ class WebsocketClientTornado():
         msg = json.loads(_message)
         if msg['op'] == 'video':
             try:
-                # TODO: Get this as a parameter of the video request
-                c = VideoTransfer("http://localhost:8080/stream?topic=/turtlebot/teleop/image&width=640&height=480",self)
+                args = msg['args']
+                c = VideoTransfer("http://localhost:8080/stream", args, self)
             except e:
                 print "Could not connect to WebCam"
                 print e
@@ -90,8 +90,10 @@ class WebsocketClientTornado():
         #print "Msg sent: [%s]" % _message
 
 class VideoTransfer():
-    def __init__(self, url, connection):
+    def __init__(self, url, args, connection):
         self.conn = connection
+        url = url + "?" + urllib.urlencode(args)
+        url = url.replace("%2F","/")
         req = tornado.httpclient.HTTPRequest(
             url = url,
             streaming_callback = self.streaming_callback)
