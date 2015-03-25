@@ -44,8 +44,8 @@ class WebsocketClientTornado():
             rospy.loginfo("connected, waiting for messages")
             w.add_done_callback(self.wsconnection_cb)
         except Exception as e:
-            print e
-            print "There was an exception"
+            rospy.logerror(e)
+            rospy.logerror("There was an exception")
 
     def dokeepalive(self):
         stream = self.conn.protocol.stream
@@ -72,9 +72,8 @@ class WebsocketClientTornado():
                 args = msg['args']
                 self.transfer = VideoTransfer("http://localhost:8080/stream", args, self)
             except e:
-                print "Could not connect to WebCam"
-                print e
-                rospy.loginfo("Could not connect to WebCam")
+                rospy.logerror("Could not connect to WebCam")
+                rospy.logerror(e)
                 self.send_message('{"op":"endVideo"}')
         elif msg['op'] == "endVideo":
             #TODO Resolve stop from client
@@ -97,24 +96,19 @@ class WebsocketClientTornado():
 
 class VideoTransfer():
     def __init__(self, url, args, connection):
-        try:
-            tornado.httpclient.AsyncHTTPClient.configure(
-                    "tornado.curl_httpclient.CurlAsyncHTTPClient")
-
-            self.conn = connection
-            url = url + "?" + urllib.urlencode(args)
-            url = url.replace("%2F","/")
-            req = tornado.httpclient.HTTPRequest(
-                url = url,
-                streaming_callback = self.streaming_callback,
-                connect_timeout = 0.0,
-                request_timeout = 0.0)
-            http_client = tornado.httpclient.AsyncHTTPClient()
-            http_client.fetch(req, self.async_callback)
-            self.start = time.time()
-        except Exception as e:
-            print e
-            print "EXCEPTION"
+        tornado.httpclient.AsyncHTTPClient.configure(
+                "tornado.curl_httpclient.CurlAsyncHTTPClient")
+        self.conn = connection
+        url = url + "?" + urllib.urlencode(args)
+        url = url.replace("%2F","/")
+        req = tornado.httpclient.HTTPRequest(
+            url = url,
+            streaming_callback = self.streaming_callback,
+            connect_timeout = 0.0,
+            request_timeout = 0.0)
+        http_client = tornado.httpclient.AsyncHTTPClient()
+        http_client.fetch(req, self.async_callback)
+        self.start = time.time()
 
     def streaming_callback(self, data):
         "Sends video in chunks"
