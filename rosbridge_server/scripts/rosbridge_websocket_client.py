@@ -4,6 +4,7 @@ import signal
 import tornado.httpclient
 import base64
 import urllib
+import time
 
 from tornado.websocket import websocket_connect
 from tornado.ioloop import IOLoop
@@ -37,10 +38,14 @@ class WebsocketClientTornado():
         self.doconn()
 
     def doconn(self):
-        rospy.loginfo("trying connection to %s" % (self.uri,))
-        w = websocket_connect(self.uri)
-        rospy.loginfo("connected, waiting for messages")
-        w.add_done_callback(self.wsconnection_cb)
+        try:
+            rospy.loginfo("trying connection to %s" % (self.uri,))
+            w = websocket_connect(self.uri)
+            rospy.loginfo("connected, waiting for messages")
+            w.add_done_callback(self.wsconnection_cb)
+        except Exception as e:
+            print e
+            print "There was an exception"
 
     def dokeepalive(self):
         stream = self.conn.protocol.stream
@@ -65,7 +70,7 @@ class WebsocketClientTornado():
         if msg['op'] == 'video':
             try:
                 args = msg['args']
-                c = VideoTransfer("http://localhost:8080/stream", args, self)
+                self.transfer = VideoTransfer("http://localhost:8080/stream", args, self)
             except e:
                 print "Could not connect to WebCam"
                 print e
@@ -73,6 +78,7 @@ class WebsocketClientTornado():
                 self.send_message('{"op":"endVideo"}')
         elif msg['op'] == "endVideo":
             #TODO Resolve stop from client
+            self.transfer.endVideo()
             pass
         else:
             protocol.incoming(_message)
@@ -91,20 +97,28 @@ class WebsocketClientTornado():
 
 class VideoTransfer():
     def __init__(self, url, args, connection):
-        self.conn = connection
-        url = url + "?" + urllib.urlencode(args)
-        url = url.replace("%2F","/")
-        req = tornado.httpclient.HTTPRequest(
-            url = url,
-            streaming_callback = self.streaming_callback)
-        http_client = tornado.httpclient.AsyncHTTPClient()
-        http_client.fetch(req, self.async_callback)
-        print "fetch finished"
+        try:
+            tornado.httpclient.AsyncHTTPClient.configure(
+                    "tornado.curl_httpclient.CurlAsyncHTTPClient")
+
+            self.conn = connection
+            url = url + "?" + urllib.urlencode(args)
+            url = url.replace("%2F","/")
+            req = tornado.httpclient.HTTPRequest(
+                url = url,
+                streaming_callback = self.streaming_callback,
+                connect_timeout = 0.0,
+                request_timeout = 0.0)
+            http_client = tornado.httpclient.AsyncHTTPClient()
+            http_client.fetch(req, self.async_callback)
+            self.start = time.time()
+        except Exception as e:
+            print e
+            print "EXCEPTION"
 
     def streaming_callback(self, data):
         "Sends video in chunks"
         try:
-            #print "Sending Video chunks"
             encoded = base64.b64encode(data)   # Encode in Base64 & make json
             chunk = json.dumps({"op": "video", "data": encoded})
             self.conn.send_message(chunk)
@@ -112,8 +126,11 @@ class VideoTransfer():
             print e
 
     def async_callback(self, response):
-        self.conn.finish()
+        print "Finished connection"
 
+    def end_video(self):
+        #TODO Manage end of video transfer
+        pass
 
 if __name__ == "__main__":
     try:
