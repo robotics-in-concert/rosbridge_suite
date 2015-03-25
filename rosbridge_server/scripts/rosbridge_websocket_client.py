@@ -79,7 +79,27 @@ class WebsocketClientTornado():
             #TODO Resolve stop from client
             self.transfer.endVideo()
             pass
+        elif msg['op'] == 'auth':
+            try:
+                # check the authorization information
+                if user_auth and not self.authenticated:
+                    auth_srv = rospy.ServiceProxy('/authenticate_user',
+                                                  UserAuthentication)
+                    resp = auth_srv(msg['user'], msg['pass'])
+                    self.authenticated = resp.authenticated
+                    if self.authenticated:
+                        rospy.loginfo("Client %d has authenticated.",
+                                      self.protocol.client_id)
+                        return
+                    # if we are here, no valid authentication was given
+                    rospy.logwarn("Client %d did not authenticate. Closing "
+                                  "connection.", self.protocol.client_id)
+                    self.close()
+            except:
+                # proper error will be handled in the protocol class
+                self.protocol.incoming(message)
         else:
+            # no authentication required
             protocol.incoming(_message)
 
     def close(self):
