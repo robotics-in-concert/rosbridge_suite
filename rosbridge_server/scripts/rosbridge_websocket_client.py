@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 import rospy
 import signal
-import tornado.httpclient
 import base64
 import urllib
 import time
 
+from rosauth.srv import UserAuthentication
+
+from tornado.httpclient import HTTPRequest, AsyncHTTPClient
 from tornado.websocket import websocket_connect
 from tornado.ioloop import IOLoop
 
@@ -18,7 +20,7 @@ PING_TIMEOUT = 15
 
 ws = None
 protocol = None
-
+authenticate = False
 webserver_port = 8080
 
 # WebsocketClientTornado
@@ -34,10 +36,12 @@ class WebsocketClientTornado():
     keepalive = None
 
     def __init__(self, uri):
+        self.authenticated = False
         self.uri = uri
         self.doconn()
 
     def doconn(self):
+        global user_auth
         try:
             rospy.loginfo("trying connection to %s" % (self.uri,))
             w = websocket_connect(self.uri)
@@ -65,13 +69,15 @@ class WebsocketClientTornado():
             timedelta(seconds=PING_TIMEOUT), self.dokeepalive)
 
     def message(self, _message):
+        global user_auth
         #print "Msg received: [%s]" % _message
         msg = json.loads(_message)
         if msg['op'] == 'video':
             try:
                 args = msg['args']
-                self.transfer = VideoTransfer("http://localhost:8080/stream", args, self)
-            except e:
+                self.transfer = VideoTransfer("http://localhost:8080/stream",
+                                              args, self)
+            except Exception as e:
                 rospy.logerror("Could not connect to WebCam")
                 rospy.logerror(e)
                 self.send_message('{"op":"endVideo"}')
@@ -88,16 +94,16 @@ class WebsocketClientTornado():
                     resp = auth_srv(msg['user'], msg['pass'])
                     self.authenticated = resp.authenticated
                     if self.authenticated:
-                        rospy.loginfo("Client %d has authenticated.",
-                                      self.protocol.client_id)
+                        rospy.loginfo("Client has authenticated")
                         return
                     # if we are here, no valid authentication was given
-                    rospy.logwarn("Client %d did not authenticate. Closing "
-                                  "connection.", self.protocol.client_id)
-                    self.close()
-            except:
+                    rospy.logwarn("Client did not authenticate. Closing "
+                                  "connection.")
+                    # TODO: INSTRUCT TO THE SERVER TO DISCONNECT
+            except Exception as e:
+                rospy.logerr("Exception during authentication %s", e)
                 # proper error will be handled in the protocol class
-                self.protocol.incoming(message)
+                self.protocol.incoming(_message)
         else:
             # no authentication required
             protocol.incoming(_message)
@@ -114,19 +120,17 @@ class WebsocketClientTornado():
         self.conn.write_message(_message)
         #print "Msg sent: [%s]" % _message
 
+
 class VideoTransfer():
     def __init__(self, url, args, connection):
-        tornado.httpclient.AsyncHTTPClient.configure(
-                "tornado.curl_httpclient.CurlAsyncHTTPClient")
+        AsyncHTTPClient.configure("tornado.curl_httpclient."
+                                  "CurlAsyncHTTPClient")
         self.conn = connection
         url = url + "?" + urllib.urlencode(args)
-        url = url.replace("%2F","/")
-        req = tornado.httpclient.HTTPRequest(
-            url = url,
-            streaming_callback = self.streaming_callback,
-            connect_timeout = 0.0,
-            request_timeout = 0.0)
-        http_client = tornado.httpclient.AsyncHTTPClient()
+        url = url.replace("%2F", "/")
+        req = HTTPRequest(url=url, streaming_callback=self.streaming_callback,
+                          connect_timeout=0.0, request_timeout=0.0)
+        http_client = AsyncHTTPClient()
         http_client.fetch(req, self.async_callback)
         self.start = time.time()
 
@@ -156,6 +160,7 @@ if __name__ == "__main__":
 
         # Connect with server
         server_uri = rospy.get_param("~webserver_uri")
+        user_auth = rospy.get_param('~user_auth')
         # In the future we are going need to use everithing on the same port
         # given throught the argument
         ws = WebsocketClientTornado(server_uri)
