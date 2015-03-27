@@ -20,7 +20,7 @@ PING_TIMEOUT = 15
 
 ws = None
 protocol = None
-authenticate = False
+user_auth = False
 webserver_port = 8080
 
 # WebsocketClientTornado
@@ -160,7 +160,7 @@ if __name__ == "__main__":
 
         # Connect with server
         server_uri = rospy.get_param("~webserver_uri")
-        user_auth = rospy.get_param('~user_auth')
+        user_auth = rospy.get_param('~user_auth', False)
         # In the future we are going need to use everithing on the same port
         # given throught the argument
         ws = WebsocketClientTornado(server_uri)
