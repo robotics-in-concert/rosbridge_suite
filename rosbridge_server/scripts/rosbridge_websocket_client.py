@@ -36,6 +36,8 @@ class WebsocketClientTornado():
     def __init__(self, uri):
         self.uri = uri
         self.doconn()
+        self.cont = 0
+
 
     def doconn(self):
         try:
@@ -60,27 +62,45 @@ class WebsocketClientTornado():
         self.conn = conn.result()
         # TODO check result
         self.conn.on_message = self.message
-        self.send_message('{"op":"proxy"}')
+        self.conn.write_message('{"op":"proxy"}')
         self.keepalive = IOLoop.instance().add_timeout(
             timedelta(seconds=PING_TIMEOUT), self.dokeepalive)
 
     def message(self, _message):
-        #print "Msg received: [%s]" % _message
         msg = json.loads(_message)
-        if msg['op'] == 'video':
+        if msg['op'] == 'videoStart':
             try:
-                args = msg['args']
+                args = msg['url_params']
                 self.transfer = VideoTransfer("http://localhost:8080/stream", args, self)
             except e:
                 rospy.logerror("Could not connect to WebCam")
                 rospy.logerror(e)
                 self.send_message('{"op":"endVideo"}')
         elif msg['op'] == "endVideo":
-            #TODO Resolve stop from client
-            self.transfer.endVideo()
-            pass
+            self.transfer.end_video()
+        elif msg['op'] == "endConn":
+            session_id = msg['session_id']
+            if session_id != None:
+                protocol = protocols.get(session_id)
+                if protocol != None:
+                    rospy.loginfo("Finishing protocol for session %s" % session_id)
+                    protocol.finish()
+                    del protocols[session_id]
         else:
-            protocol.incoming(_message)
+            try:
+                session_id = msg['session_id']
+                if session_id != None:
+                    protocol = protocols.get(session_id)
+                    if protocol == None:
+                        rospy.loginfo("New Protocol session %s" % session_id)
+                        protocol = MyRosbridgeProtocol(session_id,self.conn,session_id)
+                        self.cont += 1
+                        protocols[session_id] = protocol
+                        protocol.outgoing = protocol.send_message
+                    protocol.incoming(_message)
+            except Exception as e:
+                print e
+                rospy.logerror(e)
 
     def close(self):
         rospy.loginfo('connection closed')
@@ -90,9 +110,20 @@ class WebsocketClientTornado():
             IOLoop.instance().remove_timeout(keepalive)
         self.doconn()
 
+
+class MyRosbridgeProtocol(RosbridgeProtocol):
+    def __init__(self, session_id, conn, seed):
+        self.session_id = session_id
+        self.conn = conn
+        RosbridgeProtocol.__init__(self,seed)
+
     def send_message(self, _message):
+        if self.session_id != None:
+            msg = json.loads(_message)
+            msg["session_id"] = self.session_id
+            _message = json.dumps(msg)
         self.conn.write_message(_message)
-        #print "Msg sent: [%s]" % _message
+
 
 class VideoTransfer():
     def __init__(self, url, args, connection):
@@ -106,25 +137,25 @@ class VideoTransfer():
             streaming_callback = self.streaming_callback,
             connect_timeout = 0.0,
             request_timeout = 0.0)
-        http_client = tornado.httpclient.AsyncHTTPClient()
-        http_client.fetch(req, self.async_callback)
+        self.http_client = tornado.httpclient.AsyncHTTPClient()
+        self.http_client.fetch(req, self.async_callback)
         self.start = time.time()
 
     def streaming_callback(self, data):
         "Sends video in chunks"
         try:
             encoded = base64.b64encode(data)   # Encode in Base64 & make json
-            chunk = json.dumps({"op": "video", "data": encoded})
+            chunk = json.dumps({"op": "videoData", "data": encoded})
             self.conn.send_message(chunk)
         except Exception as e:
-            print e
+            rospy.logerror(e)
 
     def async_callback(self, response):
-        print "Finished connection"
+        rospy.loginfo("Finished connection")
 
     def end_video(self):
-        #TODO Manage end of video transfer
-        pass
+        rospy.loginfo("Finished Video")
+        self.http_client.close()
 
 if __name__ == "__main__":
     try:
@@ -132,14 +163,14 @@ if __name__ == "__main__":
 
         io_loop = IOLoop.instance()
         signal.signal(signal.SIGTERM, io_loop.stop)
-        protocol = RosbridgeProtocol(0)
+        protocols = {}
 
         # Connect with server
         server_uri = rospy.get_param("~webserver_uri")
         # In the future we are going need to use everithing on the same port
         # given throught the argument
         ws = WebsocketClientTornado(server_uri)
-        protocol.outgoing = ws.send_message
+        
 
         # Loop
         IOLoop.instance().start()
