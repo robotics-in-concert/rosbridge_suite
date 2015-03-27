@@ -35,6 +35,7 @@ import rospy
 import sys
 
 from rosauth.srv import Authentication
+from rosauth.srv import UserAuthentication
 
 from signal import signal, SIGINT, SIG_DFL
 from functools import partial
@@ -52,10 +53,11 @@ clients_connected = 0
 # if authentication should be used
 authenticate = False
 
+
 class RosbridgeWebSocket(WebSocketHandler):
 
     def open(self):
-        global client_id_seed, clients_connected, authenticate
+        global client_id_seed, clients_connected, authenticate, user_auth
         try:
             self.protocol = RosbridgeProtocol(client_id_seed)
             self.protocol.outgoing = self.send_message
@@ -63,30 +65,58 @@ class RosbridgeWebSocket(WebSocketHandler):
             client_id_seed = client_id_seed + 1
             clients_connected = clients_connected + 1
         except Exception as exc:
-            rospy.logerr("Unable to accept incoming connection.  Reason: %s", str(exc))
-        rospy.loginfo("Client connected.  %d clients total.", clients_connected)
-        if authenticate:
+            rospy.logerr("Unable to accept incoming connection.  Reason: %s",
+                         str(exc))
+        rospy.loginfo("Client connected.  %d clients total.",
+                      clients_connected)
+        if authenticate or user_auth:
             rospy.loginfo("Awaiting proper authentication...")
 
     def on_message(self, message):
-        global authenticate
+        global authenticate, user_auth
         # check if we need to authenticate
+
         if authenticate and not self.authenticated:
             try:
                 msg = json.loads(message)
                 if msg['op'] == 'auth':
                     # check the authorization information
-                    auth_srv = rospy.ServiceProxy('authenticate', Authentication)
-                    resp = auth_srv(msg['mac'], msg['client'], msg['dest'], 
-                                                  msg['rand'], rospy.Time(msg['t']), msg['level'], 
-                                                  rospy.Time(msg['end']))
+                    auth_srv = rospy.ServiceProxy('authenticate',
+                                                  Authentication)
+                    resp = auth_srv(msg['mac'], msg['client'], msg['dest'],
+                                    msg['rand'], rospy.Time(msg['t']),
+                                    msg['level'], rospy.Time(msg['end']))
                     self.authenticated = resp.authenticated
                     if self.authenticated:
-                        rospy.loginfo("Client %d has authenticated.", self.protocol.client_id)
+                        rospy.loginfo("Client %d has authenticated.",
+                                      self.protocol.client_id)
                         return
                 # if we are here, no valid authentication was given
-                rospy.logwarn("Client %d did not authenticate. Closing connection.", 
-                              self.protocol.client_id)
+                rospy.logwarn("Client %d did not authenticate. "
+                              "Closing connection.", self.protocol.client_id)
+                self.close()
+            except:
+                rospy.logwarn("Error in authentication")
+                # proper error will be handled in the protocol class
+                self.protocol.incoming(message)
+        elif user_auth and not self.authenticated:
+            try:
+                msg = json.loads(message)
+                if msg['op'] == 'auth':
+                    # check the authorization information
+
+                    auth_srv = rospy.ServiceProxy('/authenticate_user',
+                                                  UserAuthentication)
+                    resp = auth_srv(msg['user'], msg['pass'])
+                    self.authenticated = resp.authenticated
+
+                if self.authenticated:
+                    rospy.loginfo("Client %d has authenticated.",
+                                  self.protocol.client_id)
+                    return
+                # if we are here, no valid authentication was given
+                rospy.logwarn("Client %d did not authenticate. "
+                              "Closing connection.", self.protocol.client_id)
                 self.close()
             except:
                 # proper error will be handled in the protocol class
@@ -99,7 +129,8 @@ class RosbridgeWebSocket(WebSocketHandler):
         global clients_connected
         clients_connected = clients_connected - 1
         self.protocol.finish()
-        rospy.loginfo("Client disconnected. %d clients total.", clients_connected)
+        rospy.loginfo("Client disconnected. %d clients total.",
+                      clients_connected)
 
     def send_message(self, message):
         IOLoop.instance().add_callback(partial(self.write_message, message))
@@ -116,6 +147,7 @@ if __name__ == "__main__":
     keyfile = rospy.get_param('~keyfile', None)
     # if authentication should be used
     authenticate = rospy.get_param('~authenticate', False)
+    user_auth = rospy.get_param('~user_auth', False)
     port = rospy.get_param('~port', 9090)
     address = rospy.get_param('~address', "")
 
@@ -127,9 +159,10 @@ if __name__ == "__main__":
             print "--port argument provided without a value."
             sys.exit(-1)
 
-    application = Application([(r"/", RosbridgeWebSocket), (r"", RosbridgeWebSocket)])
+    application = Application([(r"/ws", RosbridgeWebSocket), ])
     if certfile is not None and keyfile is not None:
-        application.listen(port, address, ssl_options={ "certfile": certfile, "keyfile": keyfile})
+        application.listen(port, address, ssl_options={"certfile": certfile,
+                                                       "keyfile": keyfile})
     else:
         application.listen(port, address)
     rospy.loginfo("Rosbridge WebSocket server started on port %d", port)
