@@ -146,8 +146,8 @@ if __name__ == "__main__":
     certfile = rospy.get_param('~certfile', None)
     keyfile = rospy.get_param('~keyfile', None)
     # if authentication should be used
-    authenticate = rospy.get_param('~authenticate')
-    user_auth = rospy.get_param('~user_auth')
+    authenticate = rospy.get_param('~authenticate', False)
+    user_auth = rospy.get_param('~user_auth', False)
     port = rospy.get_param('~port', 9090)
     address = rospy.get_param('~address', "")
 
