@@ -4,15 +4,11 @@ import signal
 import base64
 import urllib
 import time
-
 from rosauth.srv import UserAuthentication
-
 from tornado.httpclient import HTTPRequest, AsyncHTTPClient
 from tornado.websocket import websocket_connect
 from tornado.ioloop import IOLoop
-
 from datetime import timedelta
-
 from rosbridge_library.rosbridge_protocol import RosbridgeProtocol
 from rosbridge_library.util import json
 
@@ -39,6 +35,7 @@ class WebsocketClientTornado():
         self.authenticated = False
         self.uri = uri
         self.doconn()
+        self.transfers = {}
 
     def doconn(self):
         global user_auth
@@ -48,8 +45,8 @@ class WebsocketClientTornado():
             rospy.loginfo("connected, waiting for messages")
             w.add_done_callback(self.wsconnection_cb)
         except Exception as e:
-            rospy.logerror(e)
-            rospy.logerror("There was an exception")
+            rospy.logerr(e)
+            rospy.logerr("There was an exception")
 
     def dokeepalive(self):
         stream = self.conn.protocol.stream
@@ -64,28 +61,23 @@ class WebsocketClientTornado():
         self.conn = conn.result()
         # TODO check result
         self.conn.on_message = self.message
-        self.send_message('{"op":"proxy"}')
+        self.conn.write_message('{"op":"proxy"}')
         self.keepalive = IOLoop.instance().add_timeout(
             timedelta(seconds=PING_TIMEOUT), self.dokeepalive)
 
     def message(self, _message):
         global user_auth
-        #print "Msg received: [%s]" % _message
         msg = json.loads(_message)
-        if msg['op'] == 'video':
-            try:
-                args = msg['args']
-                self.transfer = VideoTransfer("http://localhost:8080/stream",
-                                              args, self)
-            except Exception as e:
-                rospy.logerror("Could not connect to WebCam")
-                rospy.logerror(e)
-                self.send_message('{"op":"endVideo"}')
-        elif msg['op'] == "endVideo":
-            #TODO Resolve stop from client
-            self.transfer.endVideo()
-            pass
-        elif msg['op'] == 'auth':
+        session_id = msg['session_id']
+        protocol = None
+        if session_id != None:
+            protocol = protocols.get(session_id)
+        if protocol == None:
+            rospy.loginfo("New Protocol session %s" % session_id)
+            protocol = MyRosbridgeProtocol(session_id,self.conn,session_id)
+            protocols[session_id] = protocol
+            protocol.outgoing = protocol.send_message
+        if msg['op'] == 'auth':
             try:
                 # check the authorization information
                 if user_auth and not self.authenticated:
@@ -104,6 +96,22 @@ class WebsocketClientTornado():
                 rospy.logerr("Exception during authentication %s", e)
                 # proper error will be handled in the protocol class
                 self.protocol.incoming(_message)
+        elif msg['op'] == 'videoStart':
+            try:    
+                args = msg['url_params']
+                self.transfers[session_id] = VideoTransfer("http://localhost:8080/stream", args, self,session_id)
+            except Exception as e:
+                rospy.logerr("Could not connect to WebCam")
+                rospy.logerr(e)
+                self.send_message(json.dumps({"op":"endVideo","session_id":session_id}))
+        elif msg['op'] == "endVideo":
+            self.transfers[session_id].end_video()
+            del self.transfers[session_id]
+        elif msg['op'] == "endConn":
+            if protocol != None:
+                rospy.loginfo("Finishing protocol for session %s" % session_id)
+                protocol.finish()
+                del protocols[session_id]
         else:
             # no authentication required
             protocol.incoming(_message)
@@ -116,39 +124,60 @@ class WebsocketClientTornado():
             IOLoop.instance().remove_timeout(keepalive)
         self.doconn()
 
+
+class MyRosbridgeProtocol(RosbridgeProtocol):
+    def __init__(self, session_id, conn, seed):
+        self.session_id = session_id
+        self.conn = conn
+        self.mess = 0
+        RosbridgeProtocol.__init__(self,seed)
+        
     def send_message(self, _message):
-        self.conn.write_message(_message)
-        #print "Msg sent: [%s]" % _message
+        try:
+            self.mess += 1
+            if self.session_id != None:
+                msg = json.loads(_message)
+                msg["session_id"] = self.session_id
+                _message = json.dumps(msg)
+            self.conn.write_message(_message)
+        except Exception as e:
+            rospy.logerr(e)
+
 
 
 class VideoTransfer():
-    def __init__(self, url, args, connection):
-        AsyncHTTPClient.configure("tornado.curl_httpclient."
-                                  "CurlAsyncHTTPClient")
+    def __init__(self, url, args, connection,session_id):
+        tornado.httpclient.AsyncHTTPClient.configure(
+                "tornado.curl_httpclient.CurlAsyncHTTPClient")
         self.conn = connection
+        self.session_id = session_id
         url = url + "?" + urllib.urlencode(args)
-        url = url.replace("%2F", "/")
-        req = HTTPRequest(url=url, streaming_callback=self.streaming_callback,
-                          connect_timeout=0.0, request_timeout=0.0)
-        http_client = AsyncHTTPClient()
-        http_client.fetch(req, self.async_callback)
-        self.start = time.time()
+        url = url.replace("%2F","/")
+        req = tornado.httpclient.HTTPRequest(
+            url = url,
+            streaming_callback = self.streaming_callback,
+            connect_timeout = 0.0,
+            request_timeout = 0.0)
+        self.http_client = tornado.httpclient.AsyncHTTPClient()
+        self.http_client.fetch(req, self.async_callback)
+        self.chunk = 0
 
     def streaming_callback(self, data):
         "Sends video in chunks"
         try:
+            self.chunk += 1
             encoded = base64.b64encode(data)   # Encode in Base64 & make json
-            chunk = json.dumps({"op": "video", "data": encoded})
-            self.conn.send_message(chunk)
+            chunk = json.dumps({"op": "videoData", "data": encoded,"session_id":self.session_id})
+            self.conn.conn.write_message(chunk)
         except Exception as e:
-            print e
+            rospy.logerr(e)
 
     def async_callback(self, response):
-        print "Finished connection"
+        rospy.loginfo("Finished connection")
 
     def end_video(self):
-        #TODO Manage end of video transfer
-        pass
+        rospy.loginfo("Finished Video")
+        self.http_client.close()
 
 if __name__ == "__main__":
     try:
@@ -156,7 +185,7 @@ if __name__ == "__main__":
 
         io_loop = IOLoop.instance()
         signal.signal(signal.SIGTERM, io_loop.stop)
-        protocol = RosbridgeProtocol(0)
+        protocols = {}
 
         # Connect with server
         server_uri = rospy.get_param("~webserver_uri")
@@ -164,7 +193,6 @@ if __name__ == "__main__":
         # In the future we are going need to use everithing on the same port
         # given throught the argument
         ws = WebsocketClientTornado(server_uri)
-        protocol.outgoing = ws.send_message
 
         # Loop
         IOLoop.instance().start()
