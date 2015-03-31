@@ -16,7 +16,7 @@ PING_TIMEOUT = 15
 
 ws = None
 protocol = None
-user_auth = True
+user_auth = False
 webserver_port = 8080
 
 # WebsocketClientTornado
@@ -80,15 +80,13 @@ class WebsocketClientTornado():
         if msg['op'] == 'auth':
             try:
                 # check the authorization information
-                print "AUTH"
                 if user_auth:
-                    print "authenticating.."
                     auth_srv = rospy.ServiceProxy('/authenticate_user',
                                                   UserAuthentication)
                     resp = auth_srv(msg['user'], msg['pass'])
+                    self.conn.write_message(json.dumps({"op":"auth_client","session_id":msg['session_id'],"authentication":resp.authenticated }))
                     if resp.authenticated:
                         rospy.loginfo("Client has authenticated")
-                        self.conn.write_message(json.dumps({"op":"auth_client","session_id":msg['session_id'],"authentication":resp.authenticated }))
                     else: 
                         # if we are here, no valid authentication was given
                         rospy.logwarn("Client did not authenticate. Closing "
@@ -190,8 +188,7 @@ if __name__ == "__main__":
 
         # Connect with server
         server_uri = rospy.get_param("~webserver_uri")
-        user_auth = rospy.get_param('~user_auth', True)
-        user_auth = True
+        user_auth = rospy.get_param('~user_auth', False)
         # In the future we are going need to use everithing on the same port
         # given throught the argument
         ws = WebsocketClientTornado(server_uri)
