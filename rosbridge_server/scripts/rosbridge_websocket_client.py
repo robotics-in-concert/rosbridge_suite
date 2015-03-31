@@ -58,10 +58,11 @@ class WebsocketClientTornado():
             self.keepalive = None  # should never happen
 
     def wsconnection_cb(self, conn):
+        global user_auth
         self.conn = conn.result()
         # TODO check result
         self.conn.on_message = self.message
-        self.conn.write_message('{"op":"proxy","user_auth":"True"}')
+        self.conn.write_message(json.dumps({"op":"proxy","user_auth":user_auth}))
         self.keepalive = IOLoop.instance().add_timeout(
             timedelta(seconds=PING_TIMEOUT), self.dokeepalive)
 
