@@ -57,7 +57,8 @@ authenticate = False
 class RosbridgeWebSocket(WebSocketHandler):
 
     def open(self):
-        global client_id_seed, clients_connected, authenticate, user_auth
+        global client_id_seed, clients_connected, \
+            authenticate, enable_authentication
         try:
             self.protocol = RosbridgeProtocol(client_id_seed)
             self.protocol.outgoing = self.send_message
@@ -69,11 +70,11 @@ class RosbridgeWebSocket(WebSocketHandler):
                          str(exc))
         rospy.loginfo("Client connected.  %d clients total.",
                       clients_connected)
-        if authenticate or user_auth:
+        if authenticate or enable_authentication:
             rospy.loginfo("Awaiting proper authentication...")
 
     def on_message(self, message):
-        global authenticate, user_auth
+        global authenticate, enable_authentication
         # check if we need to authenticate
 
         if authenticate and not self.authenticated:
@@ -99,7 +100,7 @@ class RosbridgeWebSocket(WebSocketHandler):
                 rospy.logwarn("Error in authentication")
                 # proper error will be handled in the protocol class
                 self.protocol.incoming(message)
-        elif user_auth and not self.authenticated:
+        elif enable_authentication and not self.authenticated:
             try:
                 msg = json.loads(message)
                 if msg['op'] == 'auth':
@@ -147,7 +148,8 @@ if __name__ == "__main__":
     keyfile = rospy.get_param('~keyfile', None)
     # if authentication should be used
     authenticate = rospy.get_param('~authenticate', False)
-    user_auth = rospy.get_param('~user_auth', False)
+    enable_authentication = rospy.get_param(
+        '~enable_authentication', False)
     port = rospy.get_param('~port', 9090)
     address = rospy.get_param('~address', "")
 
