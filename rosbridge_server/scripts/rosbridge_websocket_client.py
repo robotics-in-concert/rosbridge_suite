@@ -5,7 +5,7 @@ import base64
 import urllib
 import time
 from rosauth.srv import UserAuthentication
-from tornado.httpclient import HTTPRequest, AsyncHTTPClient
+import tornado
 from tornado.websocket import websocket_connect
 from tornado.ioloop import IOLoop
 from datetime import timedelta
