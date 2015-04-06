@@ -62,7 +62,8 @@ class WebsocketClientTornado():
         self.conn = conn.result()
         # TODO check result
         self.conn.on_message = self.message
-        self.conn.write_message(json.dumps({"op":"proxy","user_auth":user_auth}))
+        proxy_name = rospy.get_param('~proxy_name',"default_name2")
+        self.conn.write_message(json.dumps({"op":"proxy","user_auth":user_auth,"name": proxy_name }))
         self.keepalive = IOLoop.instance().add_timeout(
             timedelta(seconds=PING_TIMEOUT), self.dokeepalive)
 
@@ -97,7 +98,7 @@ class WebsocketClientTornado():
                 # proper error will be handled in the protocol class
                 self.protocol.incoming(_message)
         elif msg['op'] == 'videoStart':
-            try:    
+            try:
                 args = msg['url_params']
                 self.transfers[session_id] = VideoTransfer("http://localhost:8080/stream", args, self,session_id)
             except Exception as e:
@@ -190,6 +191,7 @@ if __name__ == "__main__":
         # Connect with server
         server_uri = rospy.get_param("~webserver_uri")
         user_auth = rospy.get_param('~user_auth', False)
+        user_auth = True
         # In the future we are going need to use everithing on the same port
         # given throught the argument
         ws = WebsocketClientTornado(server_uri)
