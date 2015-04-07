@@ -3,7 +3,7 @@ import rospy
 import signal
 import base64
 import urllib
-from rosauth.srv import UserAuthentication
+from rosauth.srv import UserIdPasswordAuthentication, Authentication
 import tornado
 from tornado.websocket import websocket_connect
 from tornado.ioloop import IOLoop
@@ -11,12 +11,17 @@ from datetime import timedelta
 from rosbridge_library.rosbridge_protocol import RosbridgeProtocol
 from rosbridge_library.util import json
 
+AUTHENTICATION_ARG_MAC = "mac"
+AUTHENTICATION_ARG_USER_ID_PASSWORD = "user and password"
+
 PING_TIMEOUT = 15
 
 ws = None
 protocol = None
-enable_authentication = False
 webserver_port = 8080
+# if authentication should be used
+authenticate_mac = False
+authenticate_user_id_password = False
 
 # WebsocketClientTornado
 #
@@ -31,13 +36,13 @@ class WebsocketClientTornado():
     keepalive = None
 
     def __init__(self, uri):
-        self.authenticated = False
         self.uri = uri
         self.doconn()
         self.transfers = {}
+        self.authenticated = False
 
     def doconn(self):
-        global enable_authentication
+        global authenticate_mac, authenticate_user_id_password
         try:
             rospy.loginfo("trying connection to %s" % (self.uri,))
             w = websocket_connect(self.uri)
@@ -57,11 +62,15 @@ class WebsocketClientTornado():
             self.keepalive = None  # should never happen
 
     def wsconnection_cb(self, conn):
-        global enable_authentication
+        global authenticate_mac, authenticate_user_id_password
         self.conn = conn.result()
         # TODO check result
         self.conn.on_message = self.message
         proxy_name = rospy.get_param('~proxy_name', "default_name")
+        if authenticate_mac or authenticate_user_id_password:
+            enable_authentication = True
+        else:
+            enable_authentication = False
         self.conn.write_message(json.dumps({"op": "proxy",
                                 "enable_authentication": enable_authentication,
                                            "name": proxy_name
@@ -70,7 +79,7 @@ class WebsocketClientTornado():
             timedelta(seconds=PING_TIMEOUT), self.dokeepalive)
 
     def message(self, _message):
-        global enable_authentication
+        global authenticate_mac, authenticate_user_id_password
         msg = json.loads(_message)
         session_id = msg['session_id']
         protocol = None
@@ -81,29 +90,49 @@ class WebsocketClientTornado():
             protocol = MyRosbridgeProtocol(session_id, self.conn, session_id)
             protocols[session_id] = protocol
             protocol.outgoing = protocol.send_message
-        if msg['op'] == 'auth':
+        if authenticate_mac or authenticate_user_id_password \
+                and not self.authenticated:
             try:
-                # check the authorization information
-                if enable_authentication:
-                    auth_srv = rospy.ServiceProxy('/authenticate_user',
-                                                  UserAuthentication)
-                    resp = auth_srv(msg['user'], msg['pass'])
-                    self.conn.write_message(
-                        json.dumps({"op": "auth_client",
-                                    "session_id": msg['session_id'],
-                                    "authentication": resp.authenticated
-                                    }))
-                    if resp.authenticated:
-                        rospy.loginfo("Client has authenticated")
-                    else:
-                        # if we are here, no valid authentication was given
-                        rospy.logwarn("Client did not authenticate. Closing "
-                                      "connection.")
-            except Exception as e:
-                rospy.logerr("Exception during authentication %s", e)
+                msg = json.loads(_message)
+                if msg['op'] == 'auth':
+                    # check what type of authorithation is required and
+                    # and if it is enabled
+                    if msg['method'] == 'mac' \
+                            and authenticate_mac:
+                        # check the mac authorization information
+                        auth_srv = rospy.ServiceProxy('authenticate',
+                                                      Authentication)
+                        resp = auth_srv(msg['mac'], msg['client'], msg['dest'],
+                                        msg['rand'], rospy.Time(msg['t']),
+                                        msg['level'], rospy.Time(msg['end']))
+                        self.authenticated = resp.authenticated
+                    elif msg['method'] == 'user_id_password' \
+                            and authenticate_user_id_password:
+                        # check the user and ID authorization information
+                        auth_srv = rospy. \
+                            ServiceProxy('/authenticate_user_id_password',
+                                         UserIdPasswordAuthentication)
+                        resp = auth_srv(msg['user'], msg['pass'])
+                        self.conn.write_message(
+                            json.dumps({"op": "auth_client",
+                                        "session_id": msg['session_id'],
+                                        "authentication": resp.authenticated
+                                        }))
+                        self.authenticated = resp.authenticated
+                    if self.authenticated:
+                        rospy.loginfo("Client %d has authenticated.",
+                                      self.protocol.client_id)
+                        return
+                    # if we are here, no valid authentication was given
+                    rospy.logerr("Exception during authentication. Closing "
+                                 "connection.",
+                                 self.protocol.client_id)
+                    self.close()
+            except:
+                rospy.logwarn("Error in authentication")
                 # proper error will be handled in the protocol class
                 self.protocol.incoming(_message)
-        elif msg['op'] == 'videoStart':
+        if msg['op'] == 'videoStart':
             try:
                 args = msg['url_params']
                 self.transfers[session_id] = VideoTransfer(
@@ -139,6 +168,7 @@ class MyRosbridgeProtocol(RosbridgeProtocol):
         self.session_id = session_id
         self.conn = conn
         self.mess = 0
+        self.authenticated = False
         RosbridgeProtocol.__init__(self, seed)
 
     def send_message(self, _message):
@@ -199,11 +229,16 @@ if __name__ == "__main__":
 
         # Connect with server
         server_uri = rospy.get_param("~webserver_uri")
-        enable_authentication = rospy.get_param(
-            '~enable_authentication', False)
         # In the future we are going need to use everithing on the same port
         # given throught the argument
         ws = WebsocketClientTornado(server_uri)
+
+        # Authentication options
+        authentication_method = rospy.get_param('~authentication_method', None)
+        if AUTHENTICATION_ARG_MAC in authentication_method:
+            authentication_mac = True
+        if AUTHENTICATION_ARG_USER_ID_PASSWORD in authentication_method:
+            authentication_user_id_password = True
 
         # Loop
         IOLoop.instance().start()

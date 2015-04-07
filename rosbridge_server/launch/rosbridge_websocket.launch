@@ -4,23 +4,20 @@
   <arg name="ssl" default="false" />
   <arg name="certfile" />
   <arg name="keyfile" />
-  <arg name="authenticate" default="false" />
-  <arg name="enable_authentication" default="false" />
+  <arg name="authentication_method" />
   
   <group if="$(arg ssl)">
     <node name="rosbridge_websocket" pkg="rosbridge_server" type="rosbridge_websocket" output="screen">
       <param name="certfile" value="$(arg certfile)" />
       <param name="keyfile" value="$(arg keyfile)" />
-      <param name="authenticate" value="$(arg authenticate)" />
-      <param name="enable_authentication" value="$(arg enable_authentication)" />
+      <param name="authentication_method" value="$(arg authentication_method)" />
       <param name="port" value="$(arg port)"/>
       <param name="address" value="$(arg address)"/>
     </node>
   </group>
   <group unless="$(arg ssl)">
     <node name="rosbridge_websocket" pkg="rosbridge_server" type="rosbridge_websocket" output="screen">
-      <param name="authenticate" value="$(arg authenticate)" />
-      <param name="enable_authentication" value="$(arg enable_authentication)" />
+      <param name="authentication_method" value="$(arg authentication_method)" />
       <param name="port" value="$(arg port)"/>
       <param name="address" value="$(arg address)"/>
     </node>
