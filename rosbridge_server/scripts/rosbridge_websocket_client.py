@@ -201,7 +201,6 @@ if __name__ == "__main__":
         server_uri = rospy.get_param("~webserver_uri")
         enable_authentication = rospy.get_param(
             '~enable_authentication', False)
-        enable_authentication = True
         # In the future we are going need to use everithing on the same port
         # given throught the argument
         ws = WebsocketClientTornado(server_uri)
