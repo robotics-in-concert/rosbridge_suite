@@ -61,8 +61,10 @@ class WebsocketClientTornado():
         self.conn = conn.result()
         # TODO check result
         self.conn.on_message = self.message
+        proxy_name = rospy.get_param('~proxy_name', "default_name")
         self.conn.write_message(json.dumps({"op": "proxy",
-                                "enable_authentication": enable_authentication
+                                "enable_authentication": enable_authentication,
+                                           "name": proxy_name
                                             }))
         self.keepalive = IOLoop.instance().add_timeout(
             timedelta(seconds=PING_TIMEOUT), self.dokeepalive)
@@ -175,7 +177,7 @@ class VideoTransfer():
             encoded = base64.b64encode(data)   # Encode in Base64 & make json
             chunk = json.dumps({"op": "videoData",
                                "data": encoded,
-                               "session_id": self.session_id})
+                                "session_id": self.session_id})
             self.conn.conn.write_message(chunk)
         except Exception as e:
             rospy.logerr(e)
