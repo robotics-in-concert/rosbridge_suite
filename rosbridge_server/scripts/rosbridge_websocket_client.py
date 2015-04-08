@@ -234,10 +234,10 @@ if __name__ == "__main__":
         # TODO: use list type for possible arguments
         authentication_methods = rospy.get_param('~authentication_'
                                                  'methods', None)
-        if authentication_methods.find(AUTHENTICATION_ARG_MAC):
+        if authentication_methods.find(AUTHENTICATION_ARG_MAC) != -1:
             authenticate_mac = True
             rospy.loginfo("Authentication method using MAC")
-        if authentication_methods.find(AUTHENTICATION_ARG_USER_ID_PASSWORD):
+        if authentication_methods.find(AUTHENTICATION_ARG_USER_ID_PASSWORD) != -1:
             authenticate_userid_password = True
             rospy.loginfo("Authentication method using user id and password")
         if not authenticate_mac and not authenticate_userid_password:
