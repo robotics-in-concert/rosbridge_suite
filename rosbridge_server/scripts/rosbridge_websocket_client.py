@@ -12,7 +12,7 @@ from rosbridge_library.rosbridge_protocol import RosbridgeProtocol
 from rosbridge_library.util import json
 
 AUTHENTICATION_ARG_MAC = "mac"
-AUTHENTICATION_ARG_USER_ID_PASSWORD = "user and password"
+AUTHENTICATION_ARG_USER_ID_PASSWORD = "userid_password"
 
 PING_TIMEOUT = 15
 
@@ -21,7 +21,7 @@ protocol = None
 webserver_port = 8080
 # if authentication should be used
 authenticate_mac = False
-authenticate_user_id_password = False
+authenticate_userid_password = False
 
 # WebsocketClientTornado
 #
@@ -42,7 +42,7 @@ class WebsocketClientTornado():
         self.authenticated = False
 
     def doconn(self):
-        global authenticate_mac, authenticate_user_id_password
+        global authenticate_mac, authenticate_userid_password
         try:
             rospy.loginfo("trying connection to %s" % (self.uri,))
             w = websocket_connect(self.uri)
@@ -62,12 +62,12 @@ class WebsocketClientTornado():
             self.keepalive = None  # should never happen
 
     def wsconnection_cb(self, conn):
-        global authenticate_mac, authenticate_user_id_password
+        global authenticate_mac, authenticate_userid_password
         self.conn = conn.result()
         # TODO check result
         self.conn.on_message = self.message
         proxy_name = rospy.get_param('~proxy_name', "default_name")
-        if authenticate_mac or authenticate_user_id_password:
+        if authenticate_mac or authenticate_userid_password:
             enable_authentication = True
         else:
             enable_authentication = False
@@ -79,7 +79,7 @@ class WebsocketClientTornado():
             timedelta(seconds=PING_TIMEOUT), self.dokeepalive)
 
     def message(self, _message):
-        global authenticate_mac, authenticate_user_id_password
+        global authenticate_mac, authenticate_userid_password
         msg = json.loads(_message)
         session_id = msg['session_id']
         protocol = None
@@ -90,7 +90,7 @@ class WebsocketClientTornado():
             protocol = MyRosbridgeProtocol(session_id, self.conn, session_id)
             protocols[session_id] = protocol
             protocol.outgoing = protocol.send_message
-        if authenticate_mac or authenticate_user_id_password \
+        if authenticate_mac or authenticate_userid_password \
                 and not self.authenticated:
             try:
                 msg = json.loads(_message)
@@ -105,11 +105,11 @@ class WebsocketClientTornado():
                         resp = auth_srv(msg['mac'], msg['client'], msg['dest'],
                                         msg['rand'], rospy.Time(msg['t']),
                                         msg['level'], rospy.Time(msg['end']))
-                    elif msg['method'] == 'user_id_password' \
-                            and authenticate_user_id_password:
+                    elif msg['method'] == 'userid_password' \
+                            and authenticate_userid_password:
                         # check the user and ID authorization information
                         auth_srv = rospy. \
-                            ServiceProxy('/authenticate_user_id_password',
+                            ServiceProxy('/authenticate_userid_password',
                                          UserIdPasswordAuthentication)
                         resp = auth_srv(msg['user'], msg['pass'])
                         self.conn.write_message(
@@ -231,14 +231,16 @@ if __name__ == "__main__":
         ws = WebsocketClientTornado(server_uri)
 
         # Authentication options
-        authentication_method = rospy.get_param('~authentication_method', None)
-        if authentication_method.find(AUTHENTICATION_ARG_MAC):
+        # TODO: use list type for possible arguments
+        authentication_methods = rospy.get_param('~authentication_'
+                                                 'methods', None)
+        if authentication_methods.find(AUTHENTICATION_ARG_MAC):
             authenticate_mac = True
             rospy.loginfo("Authentication method using MAC address")
-        if authentication_method.find(AUTHENTICATION_ARG_USER_ID_PASSWORD):
-            authenticate_user_id_password = True
+        if authentication_methods.find(AUTHENTICATION_ARG_USER_ID_PASSWORD):
+            authenticate_userid_password = True
             rospy.loginfo("Authentication method using user id and password")
-        if not authenticate_mac and not authenticate_user_id_password:
+        if not authenticate_mac and not authenticate_userid_password:
             rospy.logwarn("No authentication method selected")
 
         # Loop

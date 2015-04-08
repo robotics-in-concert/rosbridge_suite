@@ -48,21 +48,21 @@ from rosbridge_library.rosbridge_protocol import RosbridgeProtocol
 from rosbridge_library.util import json
 
 AUTHENTICATION_ARG_MAC = "mac"
-AUTHENTICATION_ARG_USER_ID_PASSWORD = "user and password"
+AUTHENTICATION_ARG_USER_ID_PASSWORD = "userid_password"
 
 # Global ID seed for clients
 client_id_seed = 0
 clients_connected = 0
 # if authentication should be used
 authenticate_mac = False
-authenticate_user_id_password = False
+authenticate_userid_password = False
 
 
 class RosbridgeWebSocket(WebSocketHandler):
 
     def open(self):
         global client_id_seed, clients_connected, \
-            authenticate_mac, authenticate_user_id_password
+            authenticate_mac, authenticate_userid_password
         try:
             self.protocol = RosbridgeProtocol(client_id_seed)
             self.protocol.outgoing = self.send_message
@@ -74,21 +74,21 @@ class RosbridgeWebSocket(WebSocketHandler):
                          str(exc))
         rospy.loginfo("Client connected.  %d clients total.",
                       clients_connected)
-        if authenticate_mac or authenticate_user_id_password:
+        if authenticate_mac or authenticate_userid_password:
             rospy.loginfo("Awaiting proper authentication...")
 
     def on_message(self, message):
-        global authenticate_mac, authenticate_user_id_password
+        global authenticate_mac, authenticate_userid_password
         # check if we need to authenticate
 
-        if authenticate_mac or authenticate_user_id_password \
+        if authenticate_mac or authenticate_userid_password \
                 and not self.authenticated:
             try:
                 msg = json.loads(message)
                 if msg['op'] == 'auth':
                     # check what type of authorithation is required and
                     # and if is is enabled
-                    if msg['method'] == 'mac' \
+                    if msg['method'] == 'mac' or msg['method'] is None \
                             and authenticate_mac:
                         # check the mac authorization information
                         auth_srv = rospy.ServiceProxy('authenticate',
@@ -97,11 +97,11 @@ class RosbridgeWebSocket(WebSocketHandler):
                                         msg['rand'], rospy.Time(msg['t']),
                                         msg['level'], rospy.Time(msg['end']))
                         self.authenticated = resp.authenticated
-                    elif msg['method'] == 'user_id_password' \
-                            and authenticate_user_id_password:
+                    elif msg['method'] == 'userid_password' \
+                            and authenticate_userid_password:
                         # check the user and ID authorization information
                         auth_srv = rospy. \
-                            ServiceProxy('/authenticate_user_id_password',
+                            ServiceProxy('/authenticate_userid_password',
                                          UserIdPasswordAuthentication)
                         resp = auth_srv(msg['user'], msg['pass'])
                         self.authenticated = resp.authenticated
@@ -141,11 +141,12 @@ if __name__ == "__main__":
     signal(SIGINT, SIG_DFL)
 
     # Authentication options
-    authentication_method = rospy.get_param('~authentication_method', None)
-    if AUTHENTICATION_ARG_MAC in authentication_method:
+    # TODO: use list type for possible arguments
+    authentication_methods = rospy.get_param('~authentication_methods', None)
+    if AUTHENTICATION_ARG_MAC in authentication_methods:
         authentication_mac = True
-    if AUTHENTICATION_ARG_USER_ID_PASSWORD in authentication_method:
-        authentication_user_id_password = True
+    if AUTHENTICATION_ARG_USER_ID_PASSWORD in authentication_methods:
+        authentication_userid_password = True
 
     # SSL options
     certfile = rospy.get_param('~certfile', None)
