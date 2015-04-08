@@ -236,7 +236,7 @@ if __name__ == "__main__":
                                                  'methods', None)
         if authentication_methods.find(AUTHENTICATION_ARG_MAC):
             authenticate_mac = True
-            rospy.loginfo("Authentication method using MAC address")
+            rospy.loginfo("Authentication method using MAC")
         if authentication_methods.find(AUTHENTICATION_ARG_USER_ID_PASSWORD):
             authenticate_userid_password = True
             rospy.loginfo("Authentication method using user id and password")
