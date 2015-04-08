@@ -2,8 +2,8 @@
   <arg name="ssl" default="false" />
   <arg name="certfile" />
   <arg name="keyfile" />
-  <arg name="authentication_methods" />
-  <arg name="webserver_uri" default="ws://localhost:9090" />
+  <arg name="authentication_methods" default="" />
+  <arg name="webserver_uri" />
   <arg name="proxy_name" default="$(anon default_name)"/>
   <group if="$(arg ssl)">
     <node name="rosbridge_websocket_client" pkg="rosbridge_server" type="rosbridge_websocket_client" output="screen">
