@@ -97,7 +97,7 @@ class WebsocketClientTornado():
                 if msg['op'] == 'auth':
                     # check what type of authorithation is required and
                     # and if it is enabled
-                    if msg['method'] == 'mac' \
+                    if msg['method'] == 'mac' or msg['method'] is None \
                             and authenticate_mac:
                         # check the mac authorization information
                         auth_srv = rospy.ServiceProxy('authenticate',
@@ -105,7 +105,6 @@ class WebsocketClientTornado():
                         resp = auth_srv(msg['mac'], msg['client'], msg['dest'],
                                         msg['rand'], rospy.Time(msg['t']),
                                         msg['level'], rospy.Time(msg['end']))
-                        self.authenticated = resp.authenticated
                     elif msg['method'] == 'user_id_password' \
                             and authenticate_user_id_password:
                         # check the user and ID authorization information
@@ -118,18 +117,16 @@ class WebsocketClientTornado():
                                         "session_id": msg['session_id'],
                                         "authentication": resp.authenticated
                                         }))
-                        self.authenticated = resp.authenticated
-                    if self.authenticated:
-                        rospy.loginfo("Client %d has authenticated.",
-                                      self.protocol.client_id)
+                    if resp.authenticated:
+                        rospy.loginfo("Client has authenticatedi.")
                         return
                     # if we are here, no valid authentication was given
                     rospy.logerr("Exception during authentication. Closing "
-                                 "connection.",
-                                 self.protocol.client_id)
+                                 "connection.")
                     self.close()
-            except:
+            except Exception as e:
                 rospy.logwarn("Error in authentication")
+                rospy.logwarn(e)
                 # proper error will be handled in the protocol class
                 self.protocol.incoming(_message)
         if msg['op'] == 'videoStart':
@@ -235,10 +232,14 @@ if __name__ == "__main__":
 
         # Authentication options
         authentication_method = rospy.get_param('~authentication_method', None)
-        if AUTHENTICATION_ARG_MAC in authentication_method:
-            authentication_mac = True
-        if AUTHENTICATION_ARG_USER_ID_PASSWORD in authentication_method:
-            authentication_user_id_password = True
+        if authentication_method.find(AUTHENTICATION_ARG_MAC):
+            authenticate_mac = True
+            rospy.loginfo("Authentication method using MAC address")
+        if authentication_method.find(AUTHENTICATION_ARG_USER_ID_PASSWORD):
+            authenticate_user_id_password = True
+            rospy.loginfo("Authentication method using user id and password")
+        if not authenticate_mac and not authenticate_user_id_password:
+            rospy.logwarn("No authentication method selected")
 
         # Loop
         IOLoop.instance().start()
