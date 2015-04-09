@@ -167,7 +167,7 @@ if __name__ == "__main__":
             print "--port argument provided without a value."
             sys.exit(-1)
 
-    application = Application([(r"/ws", RosbridgeWebSocket), ])
+    application = Application([(r"/", RosbridgeWebSocket), ])
     if certfile is not None and keyfile is not None:
         application.listen(port, address, ssl_options={"certfile": certfile,
                                                        "keyfile": keyfile})
