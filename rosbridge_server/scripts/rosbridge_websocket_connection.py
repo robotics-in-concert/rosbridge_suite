@@ -271,7 +271,7 @@ class VideoTransfer():
 
 if __name__ == "__main__":
     try:
-        rospy.init_node("rosbridge_websocket_client")
+        rospy.init_node("rosbridge_websocket_connection")
 
         io_loop = tornado.ioloop.IOLoop.instance()
         signal.signal(signal.SIGTERM, io_loop.stop)

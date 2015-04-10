@@ -8,7 +8,7 @@
   <arg name="proxy_uri" />
   <arg name="proxy_name" default="$(anon default_name)"/>
   <group if="$(arg ssl)">
-    <node name="rosbridge_websocket_client" pkg="rosbridge_server" type="rosbridge_websocket_client" output="screen">
+    <node name="rosbridge_websocket_connection" pkg="rosbridge_server" type="rosbridge_websocket_connection" output="screen">
       <param name="certfile" value="$(arg certfile)" />
       <param name="keyfile" value="$(arg keyfile)" />
       <param name="web_video_server_address" value="$(arg web_video_server_address)" />
@@ -19,7 +19,7 @@
     </node>
   </group>
   <group unless="$(arg ssl)">
-    <node name="rosbridge_websocket_client" pkg="rosbridge_server" type="rosbridge_websocket_client" output="screen">
+    <node name="rosbridge_websocket_connection" pkg="rosbridge_server" type="rosbridge_websocket_connection" output="screen">
       <param name="web_video_server_address" value="$(arg web_video_server_address)" />
       <param name="web_video_server_port" value="$(arg web_video_server_port)" />
       <param name="proxy_uri" value="$(arg proxy_uri)"/>
