@@ -1,34 +1,52 @@
 #!/usr/bin/env python
+"""
+   node: rosbridge websocket client
+
+   brief: Handle websocket connection through a proxy
+
+"""
+###############################################################################
+# Imports
+###############################################################################
+
 import rospy
-import signal
 import base64
 import urllib
-from rosauth.srv import UserIdPasswordAuthentication, Authentication
+import signal
 import tornado
-from tornado.websocket import websocket_connect
-from tornado.ioloop import IOLoop
+import tornado.ioloop
+import tornado.websocket
 from datetime import timedelta
 from rosbridge_library.rosbridge_protocol import RosbridgeProtocol
 from rosbridge_library.util import json
+from rosauth.srv import UserIdPasswordAuthentication, Authentication
+
+###############################################################################
+# Configuration
+###############################################################################
 
 AUTHENTICATION_ARG_MAC = "mac"
 AUTHENTICATION_ARG_USER_ID_PASSWORD = "userid_password"
 
+WEBSOCKET_SUFFIX = "/ws"
+VIDEO_SUFFIX = "/stream"
+
 PING_TIMEOUT = 15
 
+###############################################################################
+# Global variables
+###############################################################################
+
 ws = None
+proxy_name = ""
 protocol = None
-webserver_port = 8080
-# if authentication should be used
 authenticate_mac = False
 authenticate_userid_password = False
+web_video_server_uri = ""
 
-# WebsocketClientTornado
-#
-# Class that handles the connection using websocket from Tornado Project.
-# More info:
-# http://www.tornadoweb.org/en/stable/websocket.html#client-side-support
-# Example code: http://www.seismicportal.eu/realtime.html
+###############################################################################
+# Classes
+###############################################################################
 
 
 class WebsocketClientTornado():
@@ -45,12 +63,12 @@ class WebsocketClientTornado():
         global authenticate_mac, authenticate_userid_password
         try:
             rospy.loginfo("trying connection to %s" % (self.uri,))
-            w = websocket_connect(self.uri)
+            w = tornado.websocket.websocket_connect(self.uri)
             rospy.loginfo("connected, waiting for messages")
             w.add_done_callback(self.wsconnection_cb)
         except Exception as e:
+            rospy.logerr("Exception: could not create a websocket connection")
             rospy.logerr(e)
-            rospy.logerr("There was an exception")
 
     def dokeepalive(self):
         stream = self.conn.protocol.stream
@@ -62,11 +80,17 @@ class WebsocketClientTornado():
             self.keepalive = None  # should never happen
 
     def wsconnection_cb(self, conn):
-        global authenticate_mac, authenticate_userid_password
+        """Connection callback
+          Defines receiving message function and
+          define authentication property from connection given the the
+          current start up arguments.
+
+          @param connection being stablished
+        """
+        global authenticate_mac, authenticate_userid_password, proxy_name
         self.conn = conn.result()
         # TODO check result
         self.conn.on_message = self.message
-        proxy_name = rospy.get_param('~proxy_name', "default_name")
         if authenticate_mac or authenticate_userid_password:
             enable_authentication = True
         else:
@@ -75,11 +99,25 @@ class WebsocketClientTornado():
                                 "enable_authentication": enable_authentication,
                                            "name": proxy_name
                                             }))
-        self.keepalive = IOLoop.instance().add_timeout(
+        self.keepalive = tornado.ioloop. IOLoop.instance().add_timeout(
             timedelta(seconds=PING_TIMEOUT), self.dokeepalive)
 
     def message(self, _message):
-        global authenticate_mac, authenticate_userid_password
+        """Receive message.
+          It also parse the information using the message
+          parameters.
+          The supported messages are:
+            op : auth Authentication message for user authentication.
+            op : videoStart Video connection start request for an especific
+                            user session.
+            op : endVideo Video connection end request for an specific user
+                          session.
+            op : endConn Close connection with the client.
+
+          @param message to be sended
+        """
+        global authenticate_mac, authenticate_userid_password,\
+            web_video_server_uri
         msg = json.loads(_message)
         session_id = msg['session_id']
         protocol = None
@@ -99,7 +137,7 @@ class WebsocketClientTornado():
                     # and if it is enabled
                     if msg['method'] == 'mac' or msg['method'] is None \
                             and authenticate_mac:
-                        # check the mac authorization information
+                        # check the MAC authorization information
                         auth_srv = rospy.ServiceProxy('authenticate',
                                                       Authentication)
                         resp = auth_srv(msg['mac'], msg['client'], msg['dest'],
@@ -118,14 +156,14 @@ class WebsocketClientTornado():
                                         "authentication": resp.authenticated
                                         }))
                     if resp.authenticated:
-                        rospy.loginfo("Client has authenticatedi.")
+                        rospy.loginfo("Client has authenticated.")
                         return
                     # if we are here, no valid authentication was given
-                    rospy.logerr("Exception during authentication. Closing "
+                    rospy.logerr("No valid authentication was given. Closing "
                                  "connection.")
                     self.close()
             except Exception as e:
-                rospy.logwarn("Error in authentication")
+                rospy.logwarn("Exception: error in authentication")
                 rospy.logwarn(e)
                 # proper error will be handled in the protocol class
                 self.protocol.incoming(_message)
@@ -133,9 +171,10 @@ class WebsocketClientTornado():
             try:
                 args = msg['url_params']
                 self.transfers[session_id] = VideoTransfer(
-                    "http://localhost:8080/stream", args, self, session_id)
+                    web_video_server_uri,
+                    args, self, session_id)
             except Exception as e:
-                rospy.logerr("Could not connect to WebCam")
+                rospy.logerr("Exception: could not connect to WebCam")
                 rospy.logerr(e)
                 self.write_message(json.dumps({"op": "endVideo",
                                               "session_id": session_id}))
@@ -152,11 +191,11 @@ class WebsocketClientTornado():
             protocol.incoming(_message)
 
     def close(self):
-        rospy.loginfo('connection closed')
+        rospy.loginfo('Connection closed')
         if self.keepalive is not None:
             keepalive = self.keepalive
             self.keepalive = None
-            IOLoop.instance().remove_timeout(keepalive)
+            tornado.ioloop.IOLoop.instance().remove_timeout(keepalive)
         self.doconn()
 
 
@@ -165,10 +204,14 @@ class MyRosbridgeProtocol(RosbridgeProtocol):
         self.session_id = session_id
         self.conn = conn
         self.mess = 0
-        self.authenticated = False
         RosbridgeProtocol.__init__(self, seed)
 
     def send_message(self, _message):
+        """Send message
+          It includes session id information
+
+          @param message to be sended
+        """
         try:
             self.mess += 1
             if self.session_id is not None:
@@ -177,6 +220,7 @@ class MyRosbridgeProtocol(RosbridgeProtocol):
                 _message = json.dumps(msg)
             self.conn.write_message(_message)
         except Exception as e:
+            rospy.logerr("Exception: message could not be sended")
             rospy.logerr(e)
 
 
@@ -198,15 +242,20 @@ class VideoTransfer():
         self.chunk = 0
 
     def streaming_callback(self, data):
-        "Sends video in chunks"
+        """Send video in chunks
+          the video chunks are encoded in base64 for json messages
+
+          @param video data to be sended
+        """
         try:
             self.chunk += 1
-            encoded = base64.b64encode(data)   # Encode in Base64 & make json
+            encoded = base64.b64encode(data)
             chunk = json.dumps({"op": "videoData",
                                "data": encoded,
                                 "session_id": self.session_id})
             self.conn.conn.write_message(chunk)
         except Exception as e:
+            rospy.logerr("Exception: video chunk could not be delivered")
             rospy.logerr(e)
 
     def async_callback(self, response):
@@ -216,35 +265,49 @@ class VideoTransfer():
         rospy.loginfo("Finished Video")
         self.http_client.close()
 
+###############################################################################
+# Main
+###############################################################################
+
 if __name__ == "__main__":
     try:
         rospy.init_node("rosbridge_websocket_client")
 
-        io_loop = IOLoop.instance()
+        io_loop = tornado.ioloop.IOLoop.instance()
         signal.signal(signal.SIGTERM, io_loop.stop)
         protocols = {}
 
         # Connect with server
-        server_uri = rospy.get_param("~webserver_uri")
-        # In the future we are going need to use everithing on the same port
-        # given throught the argument
+        proxy_name = rospy.get_param('~proxy_name', "default_name")
+        server_uri = rospy.get_param("~proxy_uri")
         ws = WebsocketClientTornado(server_uri)
 
-        # Authentication options
+        # Get web video server address and port
+        web_video_server_address = rospy.get_param("~web_video_server_address",
+                                                   "localhost")
+        web_video_server_port = rospy.get_param("~web_video_server_port",
+                                                8080)
+        web_video_server_uri = "http://" + web_video_server_address + ":" +\
+            str(web_video_server_port) + VIDEO_SUFFIX
+        rospy.loginfo("Using %s as websocket uri and %s as web video "
+                      "server uri", server_uri, web_video_server_uri)
+
+        # Get authentication options and configure global variables
         # TODO: use list type for possible arguments
-        authentication_methods = rospy.get_param('~authentication_'
-                                                 'methods', None)
+        authentication_methods = rospy.get_param('~authentication_methods',
+                                                 None)
         if authentication_methods.find(AUTHENTICATION_ARG_MAC) != -1:
             authenticate_mac = True
             rospy.loginfo("Authentication method using MAC")
-        if authentication_methods.find(AUTHENTICATION_ARG_USER_ID_PASSWORD) != -1:
+        if authentication_methods\
+                .find(AUTHENTICATION_ARG_USER_ID_PASSWORD) != -1:
             authenticate_userid_password = True
             rospy.loginfo("Authentication method using user id and password")
         if not authenticate_mac and not authenticate_userid_password:
             rospy.logwarn("No authentication method selected")
 
         # Loop
-        IOLoop.instance().start()
+        tornado.ioloop.IOLoop.instance().start()
 
     except rospy.ROSInterruptException:
-        IOLoop.instance().stop()
+        tornado.ioloop.IOLoop.instance().stop()

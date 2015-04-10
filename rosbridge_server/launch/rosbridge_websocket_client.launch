@@ -2,25 +2,29 @@
   <arg name="ssl" default="false" />
   <arg name="certfile" />
   <arg name="keyfile" />
+  <arg name="web_video_server_address" default="localhost" />
+  <arg name="web_video_server_port" default="8080" />
   <arg name="authentication_methods" default="" />
-  <arg name="webserver_uri" />
+  <arg name="proxy_uri" />
   <arg name="proxy_name" default="$(anon default_name)"/>
   <group if="$(arg ssl)">
     <node name="rosbridge_websocket_client" pkg="rosbridge_server" type="rosbridge_websocket_client" output="screen">
       <param name="certfile" value="$(arg certfile)" />
       <param name="keyfile" value="$(arg keyfile)" />
-      <param name="authentication_methods" value="$(arg authentication_methods)" />
-      <param name="port" value="$(arg port)"/>
-      <param name="address" value="$(arg address)"/>
-      <param name="webserver_uri" value="$(arg webserver_uri)"/>
+      <param name="web_video_server_address" value="$(arg web_video_server_address)" />
+      <param name="web_video_server_port" value="$(arg web_video_server_port)" />
+      <param name="proxy_uri" value="$(arg proxy_uri)"/>
       <param name="proxy_name" value="$(arg proxy_name)"/>
+      <param name="authentication_methods" value="$(arg authentication_methods)" />
     </node>
   </group>
   <group unless="$(arg ssl)">
     <node name="rosbridge_websocket_client" pkg="rosbridge_server" type="rosbridge_websocket_client" output="screen">
-      <param name="authentication_methods" value="$(arg authentication_methods)" />
-      <param name="webserver_uri" value="$(arg webserver_uri)"/>
+      <param name="web_video_server_address" value="$(arg web_video_server_address)" />
+      <param name="web_video_server_port" value="$(arg web_video_server_port)" />
+      <param name="proxy_uri" value="$(arg proxy_uri)"/>
       <param name="proxy_name" value="$(arg proxy_name)"/>
+      <param name="authentication_methods" value="$(arg authentication_methods)" />
     </node>
   </group>
 </launch>
