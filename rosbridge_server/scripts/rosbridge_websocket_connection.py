@@ -106,7 +106,7 @@ class WebsocketClientTornado():
         """Receive message.
           It also parse the information using the message
           parameters.
-          The supported messages are:
+          The parameters taken into condideration in this function are:
             op : auth Authentication message for user authentication.
             op : videoStart Video connection start request for an especific
                             user session.
@@ -114,7 +114,7 @@ class WebsocketClientTornado():
                           session.
             op : endConn Close connection with the client.
 
-          @param message to be sended
+          @param message to be sent
         """
         global authenticate_mac, authenticate_userid_password,\
             web_video_server_uri
@@ -210,7 +210,7 @@ class MyRosbridgeProtocol(RosbridgeProtocol):
         """Send message
           It includes session id information
 
-          @param message to be sended
+          @param message to be sent
         """
         try:
             self.mess += 1
@@ -220,7 +220,7 @@ class MyRosbridgeProtocol(RosbridgeProtocol):
                 _message = json.dumps(msg)
             self.conn.write_message(_message)
         except Exception as e:
-            rospy.logerr("Exception: message could not be sended")
+            rospy.logerr("Exception: message could not be sent")
             rospy.logerr(e)
 
 
@@ -245,7 +245,7 @@ class VideoTransfer():
         """Send video in chunks
           the video chunks are encoded in base64 for json messages
 
-          @param video data to be sended
+          @param video data to be sent
         """
         try:
             self.chunk += 1
